@@ -12,7 +12,7 @@ import io
 
 # --- PDF Report Generation ---
 
-def generate_report(analysis_data, final_img, diam_hist_fig, circ_hist_fig, filename):
+def generate_report(analysis_data, annotated_image, raw_img, final_img, diam_hist_fig, circ_hist_fig, filename):
     """Generates a PDF report using fpdf2."""
     pdf = FPDF()
     pdf.add_page()
@@ -54,6 +54,9 @@ def generate_report(analysis_data, final_img, diam_hist_fig, circ_hist_fig, file
         pdf_obj.image(img_byte_arr, w=180)
         pdf_obj.ln(5)
 
+    # ADDED: Include detection and raw measurement images in the report
+    add_image_to_pdf(pdf, "Object Detection Results", annotated_image)
+    add_image_to_pdf(pdf, "Raw Diameter Measurements", raw_img)
     add_image_to_pdf(pdf, "Final Diameter Measurements", final_img)
     add_image_to_pdf(pdf, "Diameter Distribution", None, fig=diam_hist_fig)
     add_image_to_pdf(pdf, "Circularity Distribution", None, fig=circ_hist_fig)
@@ -381,8 +384,11 @@ if analyze_button and uploaded_image:
 
             # --- PDF Generation and Download Button ---
             st.header("📄 Download Report")
+            # ADDED: Pass the new images to the report generator
             pdf_bytes = generate_report(
                 analysis_data,
+                annotated_image,
+                raw_img,
                 final_img,
                 fig_diam,
                 fig_circ,
