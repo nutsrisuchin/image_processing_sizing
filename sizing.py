@@ -7,6 +7,100 @@ import tempfile
 import shutil
 import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
+import pandas as pd
+from fpdf import FPDF
+from io import BytesIO
+import datetime
+
+# --- PDF Report Generation ---
+
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Foam Cell Analysis Report', 0, 1, 'C')
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        today = datetime.date.today().strftime("%B %d, %Y")
+        self.cell(0, 10, f'Page {self.page_no()} | Generated on {today}', 0, 0, 'C')
+
+def generate_report(analysis_data, annotated_image, final_img, raw_img, circ_img, fig_diam, fig_circ, image_name):
+    """
+    Generates a PDF report with all the analysis data and visualizations.
+    """
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    
+    # --- Title ---
+    pdf.cell(0, 10, f'Analysis for: {image_name}', 0, 1, 'L')
+    pdf.ln(10)
+
+    # --- Helper functions to add content ---
+    def add_image_to_pdf(pdf_obj, pil_image, title, width=180):
+        pdf_obj.set_font('Arial', 'B', 12)
+        pdf_obj.cell(0, 10, title, 0, 1, 'L')
+        with BytesIO() as buffer:
+            pil_image.save(buffer, format="PNG")
+            # Check if there is enough space, otherwise add a new page
+            if pdf_obj.get_y() + 70 > pdf_obj.h - pdf_obj.b_margin: # Approximate height
+                 pdf_obj.add_page()
+            pdf_obj.image(buffer, w=width)
+        pdf_obj.ln(5)
+
+    def add_fig_to_pdf(pdf_obj, fig, title, width=160):
+        pdf_obj.set_font('Arial', 'B', 12)
+        pdf_obj.cell(0, 10, title, 0, 1, 'L')
+        with BytesIO() as buffer:
+            fig.savefig(buffer, format="PNG", bbox_inches='tight')
+            if pdf_obj.get_y() + 80 > pdf_obj.h - pdf_obj.b_margin:
+                 pdf_obj.add_page()
+            pdf_obj.image(buffer, w=width)
+        pdf_obj.ln(5)
+
+    # --- Add Visualizations ---
+    add_image_to_pdf(pdf, annotated_image, "1. Object Detection Results")
+    add_image_to_pdf(pdf, final_img, "2. Final Diameter Measurements (µm)")
+    add_image_to_pdf(pdf, raw_img, "3. Raw Diameter Measurements (H & V)")
+    add_image_to_pdf(pdf, circ_img, "4. Circularity Measurements")
+
+    # --- Add Histograms ---
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, 'Statistical Analysis', 0, 1, 'L')
+    pdf.ln(5)
+    add_fig_to_pdf(pdf, fig_diam, "5. Diameter Distribution")
+    add_fig_to_pdf(pdf, fig_circ, "6. Circularity Distribution")
+
+    # --- Add Data Table ---
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, 'Detailed Measurement Data', 0, 1, 'L')
+    pdf.ln(5)
+
+    df = pd.DataFrame(analysis_data)
+    df_report = df[['number', 'h_diam', 'v_diam', 'circularity']].copy()
+    df_report.columns = ['Object #', 'H-Diam (µm)', 'V-Diam (µm)', 'Circularity']
+    
+    pdf.set_font('Arial', 'B', 10)
+    col_width = pdf.w / 4.5 
+    # Table Header
+    for col_name in df_report.columns:
+        pdf.cell(col_width, 10, col_name, border=1, align='C')
+    pdf.ln()
+    # Table Rows
+    pdf.set_font('Arial', '', 10)
+    for index, row in df_report.iterrows():
+        pdf.cell(col_width, 8, str(row['Object #']), border=1, align='C')
+        pdf.cell(col_width, 8, f"{row['H-Diam (µm)']:.2f}", border=1, align='C')
+        pdf.cell(col_width, 8, f"{row['V-Diam (µm)']:.2f}", border=1, align='C')
+        pdf.cell(col_width, 8, f"{row['Circularity']:.2f}", border=1, align='C')
+        pdf.ln()
+
+    return pdf.output(dest='S').encode('latin-1')
+
 
 # --- Core Functions from your script ---
 
@@ -284,11 +378,11 @@ if analyze_button and uploaded_image:
             st.image(circ_img, caption="Circularity (Smaller Diameter / Larger Diameter)", use_column_width=True)
 
             with st.expander("Show Detailed Measurement Data"):
-                for item in analysis_data:
-                    st.text(
-                        f"- Object {item['number']}: H-Diam={item['h_diam']:.1f}µm, "
-                        f"V-Diam={item['v_diam']:.1f}µm, Circularity={item['circularity']:.2f}"
-                    )
+                # Display data as a more readable dataframe
+                df_display = pd.DataFrame(analysis_data)[['number', 'h_diam', 'v_diam', 'circularity']]
+                df_display.columns = ['Object #', 'H-Diam (µm)', 'V-Diam (µm)', 'Circularity']
+                st.dataframe(df_display.style.format("{:.2f}", subset=['H-Diam (µm)', 'V-Diam (µm)', 'Circularity']))
+
             
             st.header("📈 Statistical Analysis")
             all_diameters = [d['h_diam'] if d['h_diam'] >= d['v_diam'] else d['v_diam'] for d in analysis_data]
@@ -299,6 +393,28 @@ if analyze_button and uploaded_image:
 
             fig_circ = create_circularity_histogram(all_circularities)
             st.pyplot(fig_circ)
+            
+            # --- ADD DOWNLOAD BUTTON ---
+            st.header("⬇️ Download Report")
+            st.info("Click the button below to download a full PDF report of the analysis.")
+            pdf_bytes = generate_report(
+                analysis_data, 
+                annotated_image, 
+                final_img, 
+                raw_img, 
+                circ_img, 
+                fig_diam, 
+                fig_circ,
+                uploaded_image.name
+            )
+            st.download_button(
+                label="Download Full Report (PDF)",
+                data=pdf_bytes,
+                file_name=f"foam_analysis_report_{os.path.splitext(uploaded_image.name)[0]}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
 
         else:
             st.error("Analysis failed. No objects were detected or an error occurred in Part 1.")
