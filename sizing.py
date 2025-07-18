@@ -99,7 +99,7 @@ def generate_report(analysis_data, annotated_image, final_img, raw_img, circ_img
         pdf.cell(col_width, 8, f"{row['Circularity']:.2f}", border=1, align='C')
         pdf.ln()
 
-    return pdf.output(dest='S').encode('latin-1')
+    return pdf.output()
 
 
 # --- Core Functions from your script ---
